@@ -2423,6 +2423,7 @@ cluster_dfw1 = http://dfw1.host/v1/
         class StatVFS(object):
             f_frsize = 1024
             f_bavail = 1
+            f_blocks = 100
 
         def fstatvfs(fd):
             return StatVFS()
@@ -2454,7 +2455,7 @@ cluster_dfw1 = http://dfw1.host/v1/
             self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 1024 <= 1024')
             # Want 1024 reserved, have 512 * 2 free, so fails
             utils.FALLOCATE_RESERVE = 1024
-            StatVFS.f_frsize = 512
+            StatVFS.f_frsize = §512
             StatVFS.f_bavail = 2
             exc = None
             try:
@@ -2499,23 +2500,75 @@ cluster_dfw1 = http://dfw1.host/v1/
             StatVFS.f_frsize = 1024
             StatVFS.f_bavail = 1
             self.assertEqual(fallocate(0, 1, 0, ctypes.c_uint64(1)), 0)
-            # Want 1023 reserved, have 1024 * 1 free, and file size is 0, so
-            # succeeds
-            utils.FALLOCATE_RESERVE = 1023
-            StatVFS.f_frsize = 1024
-            StatVFS.f_bavail = 1
-            self.assertEqual(fallocate(0, 1, 0, ctypes.c_uint64(0)), 0)
-            # Want 1024 reserved, have 1024 * 1 free, and even though
-            # file size is 0, since we're under the reserve, fails
-            utils.FALLOCATE_RESERVE = 1024
-            StatVFS.f_frsize = 1024
-            StatVFS.f_bavail = 1
+            # Want 1% reserved, have 100 bytes * 2/100 free, and file size is
+            # 99, so succeeds
+            utils.FALLOCATE_RESERVE = "1%"
+            StatVFS.f_frsize = 100
+            StatVFS.f_bavail = 2
+            StatVFS.f_blocks = 100
+            self.assertEqual(fallocate(0, 1, 0, ctypes.c_uint64(99)), 0)
+            # Want 2% reserved, have 50 bytes * 2/50 free, and file size is 49,
+            # so succeeds
+            utils.FALLOCATE_RESERVE = "2%"
+            StatVFS.f_frsize = 50
+            StatVFS.f_bavail = 2
+            StatVFS.f_blocks = 50
+            self.assertEqual(fallocate(0, 1, 0, ctypes.c_uint64(49)), 0)
+            # Want 100% reserved, have  100 * 100/100 free, and file size is 0,
+            # so fails.
+            utils.FALLOCATE_RESERVE = "100%"
+            StatVFS.f_frsize = 100
+            StatVFS.f_bavail = 100
+            StatVFS.f_blocks = 100
             exc = None
             try:
                 fallocate(0, 1, 0, ctypes.c_uint64(0))
             except OSError as err:
                 exc = err
-            self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 1024 <= 1024')
+            self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 100.0 <= 100')
+            # Want 1% reserved, have 100 * 2/100 free, and file size is 101,
+            # so fails.
+            utils.FALLOCATE_RESERVE = "1%"
+            StatVFS.f_frsize = 100
+            StatVFS.f_bavail = 2
+            StatVFS.f_blocks = 100
+            exc = None
+            try:
+                fallocate(0, 1, 0, ctypes.c_uint64(101))
+            except OSError as err:
+                exc = err
+            self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 0.99 <= 1')
+            # Want 98% reserved, have 100 bytes * 99/100 free, and file size
+            # is 100, so fails
+            utils.FALLOCATE_RESERVE = "98%"
+            StatVFS.f_frsize = 100
+            StatVFS.f_bavail = 99
+            StatVFS.f_blocks = 100
+            exc = None
+            try:
+                fallocate(0, 1, 0, ctypes.c_uint64(100))
+            except OSError as err:
+                exc = err
+            self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 98.0 <= 98')
+            # Want 2% reserved, have 1000 bytes * 21/1000 free, and file size
+            # is 999, so succeeds.
+            utils.FALLOCATE_RESERVE = "2%"
+            StatVFS.f_frsize = 1000
+            StatVFS.f_bavail = 21
+            StatVFS.f_blocks = 1000
+            self.assertEqual(fallocate(0, 1, 0, ctypes.c_uint64(999)), 0)
+            # Want 2% resereved, have 1000 bytes * 21/1000 free, and file size
+            # is 1000, so fails.
+            utils.FALLOCATE_RESERVE = "2%"
+            StatVFS.f_frsize = 1000
+            StatVFS.f_bavail = 21
+            StatVFS.f_blocks = 1000
+            exc = None
+            try:
+                fallocate(0, 1, 0, ctypes.c_uint64(1000))
+            except OSError as err:
+                exc = err
+            self.assertEqual(str(exc), 'FALLOCATE_RESERVE fail 2.0 <= 2')
         finally:
             utils.FALLOCATE_RESERVE = orig_FALLOCATE_RESERVE
             utils.os.fstatvfs = orig_fstatvfs

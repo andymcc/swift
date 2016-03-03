@@ -592,10 +592,24 @@ class FallocateWrapper(object):
 
     def __call__(self, fd, mode, offset, length):
         """The length parameter must be a ctypes.c_uint64."""
+        try:
+            if FALLOCATE_RESERVE[-1:] != '%':
+                reserve = int(FALLOCATE_RESERVE)
+                fallocate_is_percent = False
+            else:
+                reserve = float(FALLOCATE_RESERVE[:-1])
+                fallocate_is_percent = True
+        except ValueError:
+            logging.error('Error: %s is an invalid value for fallocate_reserve'
+                          '. Defaulting to 5%%' % (FALLOCATE_RESERVE))
+            reserve = 5
+            fallocate_is_percent = True
         if FALLOCATE_RESERVE > 0:
             st = os.fstatvfs(fd)
             free = st.f_frsize * st.f_bavail - length.value
-            if free <= FALLOCATE_RESERVE:
+            if fallocate_is_percent:
+                free = (float(free) / float(st.f_frsize * st.f_blocks)) * 100
+            if free <= reserve:
                 raise OSError('FALLOCATE_RESERVE fail %s <= %s' % (
                     free, FALLOCATE_RESERVE))
         args = {
